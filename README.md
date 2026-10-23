@@ -34,7 +34,7 @@ It also supports custom shared instructions that are loaded from `REVIEW_GUIDELI
 /review branch main --extra "focus on performance and error handling"
 ```
 
-PR reviews are always checked out on the local `review/pr-<number>` branch in `.worktrees/review/pr-<number>`, so the current checkout is not changed. Add `.worktrees/` to `.gitignore` if it is not already ignored. The worktree is kept after the review; remove it manually after checking its status if it is no longer needed.
+PR reviews are always checked out on the local `review/pr-<number>` branch in `.worktrees/review/pr-<number>`, so the current checkout is not changed. Add `.worktrees/` to `.gitignore` if it is not already ignored. `/end-review` removes the worktree and its branch when the review completes.
 
 When a review session is active, finish it with:
 

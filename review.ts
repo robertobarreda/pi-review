@@ -577,6 +577,46 @@ async function createPrWorktree(
 }
 
 /**
+ * Remove a PR review worktree and its review branch.
+ */
+async function removePrWorktree(
+	pi: ExtensionAPI,
+	worktreePath: string,
+): Promise<{ success: boolean; error?: string }> {
+	const repoRoot = await getGitRoot(pi);
+	if (!repoRoot) {
+		return { success: false, error: "Could not determine the repository root" };
+	}
+
+	const reviewRoot = path.join(repoRoot, ".worktrees", "review");
+	const resolvedPath = path.resolve(worktreePath);
+	if (resolvedPath !== reviewRoot && !resolvedPath.startsWith(`${reviewRoot}${path.sep}`)) {
+		return { success: false, error: `Refusing to remove worktree outside ${reviewRoot}` };
+	}
+
+	const removeResult = await pi.exec("git", ["worktree", "remove", "--force", resolvedPath], {
+		cwd: repoRoot,
+	});
+	if (removeResult.code !== 0) {
+		return {
+			success: false,
+			error: removeResult.stderr || removeResult.stdout || "Failed to remove review worktree",
+		};
+	}
+
+	const branch = `review/${path.basename(resolvedPath)}`;
+	const deleteResult = await pi.exec("git", ["branch", "-D", branch], { cwd: repoRoot });
+	if (deleteResult.code !== 0) {
+		return {
+			success: false,
+			error: `Removed the worktree but could not delete branch ${branch}: ${deleteResult.stderr || deleteResult.stdout}`,
+		};
+	}
+
+	return { success: true };
+}
+
+/**
  * Get the current branch name
  */
 async function getCurrentBranch(pi: ExtensionAPI): Promise<string | null> {
@@ -1661,6 +1701,17 @@ Instructions:
 		pi.appendEntry(REVIEW_STATE_TYPE, { active: false });
 	}
 
+	async function finishReview(ctx: ExtensionContext): Promise<void> {
+		const worktreePath = reviewWorktreePath ?? getReviewState(ctx)?.worktreePath;
+		clearReviewState(ctx);
+		if (!worktreePath) return;
+
+		const result = await removePrWorktree(pi, worktreePath);
+		if (!result.success) {
+			ctx.ui.notify(`Could not remove review worktree: ${result.error}`, "warning");
+		}
+	}
+
 	async function navigateWithSummary(
 		ctx: ExtensionCommandContext,
 		originId: string,
@@ -1721,7 +1772,7 @@ Instructions:
 				return "error";
 			}
 
-			clearReviewState(ctx);
+			await finishReview(ctx);
 			if (notifySuccess) {
 				ctx.ui.notify("Review complete! Returned to original position.", "info");
 			}
@@ -1744,7 +1795,7 @@ Instructions:
 			return "cancelled";
 		}
 
-		clearReviewState(ctx);
+		await finishReview(ctx);
 
 		if (action === "returnAndSummarize") {
 			if (!ctx.ui.getEditorText().trim()) {
