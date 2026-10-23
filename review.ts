@@ -486,7 +486,25 @@ async function getPrFetchRemote(
 
 async function getGitRoot(pi: ExtensionAPI): Promise<string | null> {
 	const { stdout, code } = await pi.exec("git", ["rev-parse", "--show-toplevel"]);
-	return code === 0 && stdout.trim() ? stdout.trim() : null;
+	if (code === 0 && stdout.trim()) {
+		return stdout.trim();
+	}
+
+	// A bare repository has no working tree, so --show-toplevel fails.
+	// Use the git dir instead: parent of .git for the default layout, or the
+	// git dir itself for repos stored with a bare layout.
+	const gitDirResult = await pi.exec("git", ["rev-parse", "--absolute-git-dir"]);
+	if (gitDirResult.code !== 0 || !gitDirResult.stdout.trim()) {
+		return null;
+	}
+	const gitDir = gitDirResult.stdout.trim();
+
+	const bareResult = await pi.exec("git", ["rev-parse", "--is-bare-repository"]);
+	if (bareResult.code !== 0 || bareResult.stdout.trim() !== "true") {
+		return null;
+	}
+
+	return path.basename(gitDir) === ".git" ? path.dirname(gitDir) : gitDir;
 }
 
 /**
